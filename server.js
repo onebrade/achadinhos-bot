@@ -49,26 +49,28 @@ app.post("/send", async (req, res) => {
       }
     );
 
-    const data = await response.json();
+   if (!data.ok) {
+  console.error("ERRO TELEGRAM:", data);
 
-    if (!data.ok) {
-      return res.status(500).json({
-        success: false,
-        error: data.description
-      });
-    }
+  return res.status(500).json({
+    success: false,
+    error: data.description
+  });
+}
 
     return res.json({
       success: true,
       message: "Mensagem enviada com sucesso!"
     });
 
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
+ } catch (error) {
+  console.error("ERRO INTERNO:", error);
+
+  return res.status(500).json({
+    success: false,
+    error: error.message
+  });
+}
 });
 
 app.listen(PORT, () => {
