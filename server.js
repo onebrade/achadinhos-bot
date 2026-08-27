@@ -48,7 +48,9 @@ app.post("/send", async (req, res) => {
         })
       }
     );
-
+    
+const data = await response.json();
+    
    if (!data.ok) {
   console.error("ERRO TELEGRAM:", data);
 
