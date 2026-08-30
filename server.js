@@ -223,3 +223,80 @@ const ML_REDIRECT_URI = process.env.ML_REDIRECT_URI;
 
 let mlAccessToken = null;
 let mlRefreshToken = null;
+
+// ==========================
+// MERCADO LIVRE OAUTH
+// ==========================
+
+app.get("/ml/login", (req, res) => {
+  if (!ML_CLIENT_ID || !ML_REDIRECT_URI) {
+    return res.status(500).json({
+      success: false,
+      error: "Credenciais do Mercado Livre não configuradas.",
+    });
+  }
+
+  const authUrl =
+    `https://auth.mercadolivre.com.br/authorization` +
+    `?response_type=code` +
+    `&client_id=${ML_CLIENT_ID}` +
+    `&redirect_uri=${encodeURIComponent(ML_REDIRECT_URI)}`;
+
+  res.redirect(authUrl);
+});
+
+app.get("/callback", async (req, res) => {
+  try {
+    const { code } = req.query;
+
+    if (!code) {
+      return res.status(400).send("Código de autorização não recebido.");
+    }
+
+    const response = await fetch(
+      "https://api.mercadolibre.com/oauth/token",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          client_id: ML_CLIENT_ID,
+          client_secret: ML_CLIENT_SECRET,
+          code,
+          redirect_uri: ML_REDIRECT_URI,
+        }),
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error("ERRO OAUTH ML:", data);
+
+      return res.status(500).json({
+        success: false,
+        error: data,
+      });
+    }
+
+    mlAccessToken = data.access_token;
+    mlRefreshToken = data.refresh_token;
+
+    console.log("Mercado Livre autenticado com sucesso.");
+
+    return res.send(`
+      <h1>✅ Mercado Livre conectado!</h1>
+      <p>O Achadinhos Bot foi autorizado com sucesso.</p>
+      <p>Agora você pode fechar esta página.</p>
+    `);
+  } catch (error) {
+    console.error("ERRO CALLBACK ML:", error);
+
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
