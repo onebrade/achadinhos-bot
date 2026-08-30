@@ -216,3 +216,10 @@ ${produto.link}
 app.listen(PORT, () => {
   console.log(`Achadinhos Bot rodando na porta ${PORT}`);
 });
+
+const ML_CLIENT_ID = process.env.ML_CLIENT_ID;
+const ML_CLIENT_SECRET = process.env.ML_CLIENT_SECRET;
+const ML_REDIRECT_URI = process.env.ML_REDIRECT_URI;
+
+let mlAccessToken = null;
+let mlRefreshToken = null;
