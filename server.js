@@ -1257,6 +1257,42 @@ app.get("/ml/test-item", async (req, res) => {
   }
 });
 
+app.get("/ml/app-info", async (req, res) => {
+  try {
+    if (!mlAccessToken) {
+      return res.status(401).json({
+        success: false,
+        erro: "Faça login no Mercado Livre primeiro."
+      });
+    }
+
+    const appId = process.env.ML_CLIENT_ID;
+
+    const response = await fetch(
+      `https://api.mercadolibre.com/applications/${appId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${mlAccessToken}`,
+          Accept: "application/json"
+        }
+      }
+    );
+
+    const data = await response.json();
+
+    return res.status(response.status).json({
+      httpStatus: response.status,
+      aplicacao: data
+    });
+
+  } catch (erro) {
+    return res.status(500).json({
+      success: false,
+      erro: erro.message
+    });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(
     `🚀 Achadinhos Bot rodando na porta ${PORT}`
