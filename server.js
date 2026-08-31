@@ -1221,6 +1221,42 @@ ${produto.link}
 // TEM QUE SER A ÚLTIMA PARTE DO ARQUIVO
 // ======================================================
 
+app.get("/ml/test-item", async (req, res) => {
+  try {
+    if (!mlAccessToken) {
+      return res.status(401).json({
+        success: false,
+        erro: "Faça login no Mercado Livre primeiro."
+      });
+    }
+
+    const itemId = "MLB7420274282";
+
+    const response = await fetch(
+      `https://api.mercadolibre.com/items?ids=${itemId}&attributes=id,title,price,original_price,permalink,status`,
+      {
+        headers: {
+          Authorization: `Bearer ${mlAccessToken}`,
+          Accept: "application/json"
+        }
+      }
+    );
+
+    const data = await response.json();
+
+    res.status(response.status).json({
+      httpStatus: response.status,
+      resultado: data
+    });
+
+  } catch (erro) {
+    res.status(500).json({
+      success: false,
+      erro: erro.message
+    });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(
     `🚀 Achadinhos Bot rodando na porta ${PORT}`
