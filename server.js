@@ -407,3 +407,51 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Achadinhos Bot rodando na porta ${PORT}`);
 });
+
+// TESTE DA CONEXÃO COM A API DO MERCADO LIVRE
+app.get("/ml/test", async (req, res) => {
+  try {
+    if (!mlAccessToken) {
+      return res.status(401).json({
+        success: false,
+        error: "Mercado Livre ainda não está autenticado."
+      });
+    }
+
+    const response = await fetch(
+      "https://api.mercadolibre.com/users/me",
+      {
+        headers: {
+          Authorization: `Bearer ${mlAccessToken}`
+        }
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return res.status(response.status).json({
+        success: false,
+        mercadoLivre: data
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "API do Mercado Livre funcionando!",
+      user: {
+        id: data.id,
+        nickname: data.nickname,
+        country_id: data.country_id
+      }
+    });
+
+  } catch (error) {
+    console.error("Erro no teste Mercado Livre:", error);
+
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
