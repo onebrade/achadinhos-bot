@@ -408,6 +408,397 @@ app.listen(PORT, () => {
   console.log(`🚀 Achadinhos Bot rodando na porta ${PORT}`);
 });
 
+// ===============================
+// MERCADO LIVRE - TOP 10 PRODUTOS
+// 4 Eletrônicos + 3 Casa + 3 Beleza
+// ===============================
+
+function formatarPreco(valor) {
+  if (valor === null || valor === undefined) return null;
+
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL"
+  }).format(valor);
+}
+
+async function mlFetch(url) {
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${mlAccessToken}`
+    }
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      `Erro Mercado Livre ${response.status}: ${JSON.stringify(data)}`
+    );
+  }
+
+  return data;
+}
+
+
+// Descobre automaticamente uma categoria adequada
+async function descobrirCategoria(termo) {
+  const url =
+    `https://api.mercadolibre.com/sites/MLB/domain_discovery/search` +
+    `?limit=1&q=${encodeURIComponent(termo)}`;
+
+  const resultado = await mlFetch(url);
+
+  if (!Array.isArray(resultado) || resultado.length === 0) {
+    throw new Error(`Categoria não encontrada para: ${termo}`);
+  }
+
+  return {
+    id: resultado[0].category_id,
+    nome: resultado[0].category_name
+  };
+}
+
+
+// Busca ranking dos mais vendidos
+async function buscarHighlights(categoryId) {
+  const url =
+    `https://api.mercadolibre.com/highlights/MLB/category/${categoryId}`;
+
+  const resultado = await mlFetch(url);
+
+  return resultado.content || [];
+}
+
+
+// Busca detalhes de um ITEM
+async function buscarItem(itemId) {
+  const item = await mlFetch(
+    `https://api.mercadolibre.com/items/${itemId}`
+  );
+
+  let precoAtual = item.price;
+  let precoAnterior = item.original_price;
+
+  // Tenta consultar o endpoint atual de preços
+  try {
+    const precos = await mlFetch(
+      `https://api.mercadolibre.com/items/${itemId}/prices`
+    );
+
+    const lista = precos.prices || [];
+
+    const promocao = lista.find(
+      p => p.type === "promotion"
+    );
+
+    const standard = lista.find(
+      p => p.type === "standard"
+    );
+
+    if (promocao) {
+      precoAtual = promocao.amount;
+
+      if (promocao.regular_amount) {
+        precoAnterior = promocao.regular_amount;
+      } else if (standard) {
+        precoAnterior = standard.amount;
+      }
+    } else if (standard) {
+      precoAtual = standard.amount;
+    }
+
+  } catch (erro) {
+    console.log(
+      `Não consegui consultar /prices para ${itemId}. Usando preço do item.`
+    );
+  }
+
+  let desconto = null;
+
+  if (
+    precoAnterior &&
+    precoAtual &&
+    precoAnterior > precoAtual
+  ) {
+    desconto = Math.round(
+      ((precoAnterior - precoAtual) / precoAnterior) * 100
+    );
+  }
+
+  return {
+    id: item.id,
+    titulo: item.title,
+    preco: precoAtual,
+    precoFormatado: formatarPreco(precoAtual),
+    precoAnterior: precoAnterior,
+    precoAnteriorFormatado:
+      precoAnterior ? formatarPreco(precoAnterior) : null,
+    desconto: desconto,
+    link: item.permalink,
+    tipo: "ITEM"
+  };
+}
+
+
+// Tenta transformar resultado PRODUCT em um item comprável
+async function buscarProdutoCatalogo(productId) {
+  try {
+    const produto = await mlFetch(
+      `https://api.mercadolibre.com/products/${productId}`
+    );
+
+    // Algumas respostas de produto trazem referência de item
+    const itemId =
+      produto.buy_box_winner?.item_id ||
+      produto.buy_box_winner?.id ||
+      produto.item_id;
+
+    if (itemId) {
+      return await buscarItem(itemId);
+    }
+
+    return null;
+
+  } catch (erro) {
+    console.log(
+      `Não consegui transformar PRODUCT ${productId} em ITEM.`
+    );
+
+    return null;
+  }
+}
+
+
+// Tenta transformar USER_PRODUCT em um item do vendedor
+async function buscarUserProduct(userProductId) {
+  try {
+    const userProduct = await mlFetch(
+      `https://api.mercadolibre.com/user-products/${userProductId}`
+    );
+
+    // Nem todo User Product entrega um item diretamente.
+    // Se não houver item, ignoramos neste primeiro teste.
+    const itemId =
+      userProduct.item_id ||
+      userProduct.item?.id;
+
+    if (itemId) {
+      return await buscarItem(itemId);
+    }
+
+    return null;
+
+  } catch (erro) {
+    console.log(
+      `Não consegui transformar USER_PRODUCT ${userProductId} em ITEM.`
+    );
+
+    return null;
+  }
+}
+
+
+// Converte resultado do ranking em produto com preço/link
+async function processarHighlight(highlight) {
+  try {
+
+    if (highlight.type === "ITEM") {
+      return await buscarItem(highlight.id);
+    }
+
+    if (highlight.type === "PRODUCT") {
+      return await buscarProdutoCatalogo(highlight.id);
+    }
+
+    if (highlight.type === "USER_PRODUCT") {
+      return await buscarUserProduct(highlight.id);
+    }
+
+    return null;
+
+  } catch (erro) {
+    console.error(
+      `Erro ao processar ${highlight.id}:`,
+      erro.message
+    );
+
+    return null;
+  }
+}
+
+
+// Busca 1 produto válido para cada termo
+async function buscarProdutoPorTermo(termo, grupo) {
+  const categoria = await descobrirCategoria(termo);
+
+  const ranking = await buscarHighlights(categoria.id);
+
+  for (const highlight of ranking) {
+
+    const produto = await processarHighlight(highlight);
+
+    if (produto) {
+      return {
+        ...produto,
+        grupo: grupo,
+        busca: termo,
+        categoria: categoria.nome,
+        posicaoRanking: highlight.position
+      };
+    }
+  }
+
+  return null;
+}
+
+
+app.get("/ml/top10", async (req, res) => {
+
+  try {
+
+    if (!mlAccessToken) {
+      return res.status(401).json({
+        success: false,
+        error:
+          "Mercado Livre não está autenticado. Abra /ml/login novamente."
+      });
+    }
+
+
+    const pesquisas = [
+
+      // 4 ELETRÔNICOS
+      {
+        termo: "fone bluetooth",
+        grupo: "Eletrônicos"
+      },
+      {
+        termo: "smartphone",
+        grupo: "Eletrônicos"
+      },
+      {
+        termo: "smartwatch",
+        grupo: "Eletrônicos"
+      },
+      {
+        termo: "caixa de som bluetooth",
+        grupo: "Eletrônicos"
+      },
+
+
+      // 3 CASA E COZINHA
+      {
+        termo: "air fryer",
+        grupo: "Casa e Cozinha"
+      },
+      {
+        termo: "jogo de panelas",
+        grupo: "Casa e Cozinha"
+      },
+      {
+        termo: "aspirador de pó",
+        grupo: "Casa e Cozinha"
+      },
+
+
+      // 3 BELEZA
+      {
+        termo: "kit maquiagem",
+        grupo: "Beleza"
+      },
+      {
+        termo: "secador de cabelo",
+        grupo: "Beleza"
+      },
+      {
+        termo: "perfume feminino",
+        grupo: "Beleza"
+      }
+
+    ];
+
+
+    const produtos = [];
+
+    const idsUsados = new Set();
+
+
+    for (const pesquisa of pesquisas) {
+
+      try {
+
+        const produto = await buscarProdutoPorTermo(
+          pesquisa.termo,
+          pesquisa.grupo
+        );
+
+        if (
+          produto &&
+          !idsUsados.has(produto.id)
+        ) {
+
+          idsUsados.add(produto.id);
+
+          produtos.push(produto);
+        }
+
+      } catch (erro) {
+
+        console.error(
+          `Erro na busca "${pesquisa.termo}":`,
+          erro.message
+        );
+      }
+
+      // pequeno intervalo para não disparar tudo de uma vez
+      await sleep(250);
+    }
+
+
+    res.json({
+      success: true,
+      total: produtos.length,
+      divisao: {
+        eletronicos: 4,
+        casaECozinha: 3,
+        beleza: 3
+      },
+      aviso:
+        "Os links abaixo são links normais do Mercado Livre. Ainda vamos adicionar a conversão para seu link de afiliado.",
+      produtos: produtos.map((produto, index) => ({
+        numero: index + 1,
+        grupo: produto.grupo,
+        categoria: produto.categoria,
+        produto: produto.titulo,
+        preco: produto.precoFormatado,
+        precoAnterior:
+          produto.precoAnteriorFormatado,
+        desconto:
+          produto.desconto !== null
+            ? `${produto.desconto}%`
+            : "Sem desconto identificado",
+        link: produto.link,
+        ranking:
+          produto.posicaoRanking
+      }))
+    });
+
+
+  } catch (erro) {
+
+    console.error(
+      "Erro no /ml/top10:",
+      erro
+    );
+
+    res.status(500).json({
+      success: false,
+      error: erro.message
+    });
+  }
+});
+
 // TESTE DA CONEXÃO COM A API DO MERCADO LIVRE
 app.get("/ml/test", async (req, res) => {
   try {
