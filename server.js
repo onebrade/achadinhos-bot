@@ -674,6 +674,46 @@ async function buscarUserProduct(userProductId) {
   }
 }
 
+async function buscarProdutoPorTermo(termo, grupo) {
+  try {
+    const categoria = await descobrirCategoria(termo);
+
+    console.log(
+      `Busca "${termo}" -> categoria ${categoria.nome} (${categoria.id})`
+    );
+
+    const ranking = await buscarHighlights(categoria.id);
+
+    console.log(
+      `Ranking "${termo}": ${ranking.length} resultados`
+    );
+
+    for (const highlight of ranking) {
+      const produto = await processarHighlight(highlight);
+
+      if (produto) {
+        return {
+          ...produto,
+          grupo: grupo,
+          busca: termo,
+          categoria: categoria.nome,
+          posicaoRanking: highlight.position
+        };
+      }
+    }
+
+    console.log(`Nenhum produto válido encontrado para "${termo}"`);
+    return null;
+
+  } catch (erro) {
+    console.error(
+      `Erro em buscarProdutoPorTermo("${termo}"):`,
+      erro.message
+    );
+
+    throw erro;
+  }
+}
 
 app.get("/ml/top10", async (req, res) => {
 
