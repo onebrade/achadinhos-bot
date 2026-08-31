@@ -570,35 +570,6 @@ async function buscarProdutoCatalogo(productId) {
 }
 
 
-// Tenta transformar USER_PRODUCT em um item do vendedor
-async function buscarUserProduct(userProductId) {
-  try {
-    const userProduct = await mlFetch(
-      `https://api.mercadolibre.com/user-products/${userProductId}`
-    );
-
-    // Nem todo User Product entrega um item diretamente.
-    // Se não houver item, ignoramos neste primeiro teste.
-    const itemId =
-      userProduct.item_id ||
-      userProduct.item?.id;
-
-    if (itemId) {
-      return await buscarItem(itemId);
-    }
-
-    return null;
-
-  } catch (erro) {
-    console.log(
-      `Não consegui transformar USER_PRODUCT ${userProductId} em ITEM.`
-    );
-
-    return null;
-  }
-}
-
-
 // Converte resultado do ranking em produto com preço/link
 async function processarHighlight(highlight) {
   try {
