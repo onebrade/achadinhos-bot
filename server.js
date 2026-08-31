@@ -278,24 +278,84 @@ async function buscarProdutoCatalogo(productId) {
   try {
     console.log(`Consultando PRODUCT: ${productId}`);
 
+    // 1. Consulta os detalhes do produto
     const produto = await mlFetch(
       `https://api.mercadolibre.com/products/${productId}`
     );
 
-    const itemId =
+    // 2. Se houver ganhador da buy box, usa ele
+    const itemVencedor =
       produto?.buy_box_winner?.item_id ||
-      produto?.buy_box_winner?.id ||
-      produto?.item_id;
+      produto?.buy_box_winner?.id;
 
-    if (!itemId) {
+    if (itemVencedor) {
       console.log(
-        `PRODUCT ${productId} não retornou ITEM comprável.`
+        `PRODUCT ${productId} possui BUY BOX ITEM: ${itemVencedor}`
+      );
+
+      return await buscarItem(itemVencedor);
+    }
+
+    // 3. Se não houver buy_box_winner,
+    // busca as ofertas associadas ao produto
+    console.log(
+      `PRODUCT ${productId} sem buy_box_winner. Buscando /items...`
+    );
+
+    const ofertas = await mlFetch(
+      `https://api.mercadolibre.com/products/${productId}/items`
+    );
+
+    let resultados = [];
+
+    if (Array.isArray(ofertas)) {
+      resultados = ofertas;
+    } else if (Array.isArray(ofertas?.results)) {
+      resultados = ofertas.results;
+    }
+
+    if (resultados.length === 0) {
+      console.log(
+        `PRODUCT ${productId} não possui ofertas disponíveis.`
       );
 
       return null;
     }
 
-    return await buscarItem(itemId);
+    // 4. Procura um item válido nas primeiras ofertas
+    for (const oferta of resultados.slice(0, 10)) {
+      const itemId =
+        typeof oferta === "string"
+          ? oferta
+          : oferta?.item_id || oferta?.id;
+
+      if (!itemId) {
+        continue;
+      }
+
+      try {
+        const item = await buscarItem(itemId);
+
+        if (item?.id && item?.link) {
+          console.log(
+            `✅ PRODUCT ${productId} convertido em ITEM ${item.id}`
+          );
+
+          return item;
+        }
+      } catch (erroItem) {
+        console.log(
+          `Não consegui usar ITEM ${itemId}: ${erroItem.message}`
+        );
+      }
+    }
+
+    console.log(
+      `PRODUCT ${productId} não teve nenhum ITEM válido.`
+    );
+
+    return null;
+
   } catch (erro) {
     console.log(
       `Erro ao transformar PRODUCT ${productId}:`,
@@ -423,9 +483,13 @@ async function processarHighlight(highlight) {
       return await buscarProdutoCatalogo(highlight.id);
     }
 
-    if (highlight.type === "USER_PRODUCT") {
-      return await buscarUserProduct(highlight.id);
-    }
+   if (highlight.type === "USER_PRODUCT") {
+  console.log(
+    `Ignorando USER_PRODUCT ${highlight.id}: acesso restrito para outros vendedores.`
+  );
+
+  return null;
+}
 
     console.log(
       `Tipo desconhecido no ranking: ${highlight.type}`
