@@ -629,27 +629,49 @@ async function processarHighlight(highlight) {
 
 
 // Busca 1 produto válido para cada termo
-async function buscarProdutoPorTermo(termo, grupo) {
-  const categoria = await descobrirCategoria(termo);
+async function buscarUserProduct(userProductId) {
+  try {
+    // 1. Consulta o User Product
+    const userProduct = await mlFetch(
+      `https://api.mercadolibre.com/user-products/${userProductId}`
+    );
 
-  const ranking = await buscarHighlights(categoria.id);
+    const sellerId = userProduct.user_id;
 
-  for (const highlight of ranking) {
-
-    const produto = await processarHighlight(highlight);
-
-    if (produto) {
-      return {
-        ...produto,
-        grupo: grupo,
-        busca: termo,
-        categoria: categoria.nome,
-        posicaoRanking: highlight.position
-      };
+    if (!sellerId) {
+      console.log(`USER_PRODUCT ${userProductId} sem user_id`);
+      return null;
     }
-  }
 
-  return null;
+    // 2. Busca os anúncios associados a esse User Product
+    const busca = await mlFetch(
+      `https://api.mercadolibre.com/users/${sellerId}/items/search?user_product_id=${userProductId}`
+    );
+
+    if (
+      !busca.results ||
+      !Array.isArray(busca.results) ||
+      busca.results.length === 0
+    ) {
+      console.log(
+        `Nenhum ITEM encontrado para USER_PRODUCT ${userProductId}`
+      );
+      return null;
+    }
+
+    // 3. Usa o primeiro anúncio associado
+    const itemId = busca.results[0];
+
+    return await buscarItem(itemId);
+
+  } catch (erro) {
+    console.log(
+      `Erro ao transformar USER_PRODUCT ${userProductId}:`,
+      erro.message
+    );
+
+    return null;
+  }
 }
 
 
@@ -754,7 +776,6 @@ app.get("/ml/top10", async (req, res) => {
       // pequeno intervalo para não disparar tudo de uma vez
       await sleep(250);
     }
-
 
     res.json({
       success: true,
